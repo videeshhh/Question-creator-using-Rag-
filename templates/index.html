@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG PDF Question Answering System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(45deg, #1e3c72, #2a5298);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .upload-section {
+            border: 3px dashed #ddd;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 30px;
+            transition: border-color 0.3s;
+        }
+        
+        .upload-section:hover {
+            border-color: #667eea;
+        }
+        
+        .file-input {
+            display: none;
+        }
+        
+        .upload-btn {
+            background: #667eea;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        .upload-btn:hover {
+            background: #5a67d8;
+        }
+        
+        .questions-section, .answer-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 30px;
+            display: none;
+        }
+        
+        .question-item {
+            background: white;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .question-text {
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #2d3748;
+        }
+        
+        .answer-btn {
+            background: #48bb78;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        .answer-btn:hover {
+            background: #38a169;
+        }
+        
+        .answer-display {
+            background: #e6fffa;
+            border: 1px solid #81e6d9;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 15px;
+            display: none;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .status.success {
+            background: #c6f6d5;
+            border: 1px solid #68d391;
+            color: #22543d;
+        }
+        
+        .status.error {
+            background: #fed7d7;
+            border: 1px solid #fc8181;
+            color: #742a2a;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>RAG PDF Q&A System</h1>
+            <p>Upload a PDF to generate questions and get AI-powered answers</p>
+        </div>
+        
+        <div class="content">
+            <div class="status" id="status"></div>
+            
+            <div class="upload-section" id="uploadSection">
+                <h2>Upload Your PDF Document</h2>
+                <p>Select a PDF file to start generating questions and answers</p>
+                <input type="file" id="pdfInput" class="file-input" accept=".pdf">
+                <button class="upload-btn" onclick="document.getElementById('pdfInput').click()">
+                    Choose PDF File
+                </button>
+                <button class="upload-btn" id="processBtn" onclick="processPDF()" style="display: none; margin-left: 10px;">
+                    Process PDF
+                </button>
+            </div>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Processing your PDF document...</p>
+            </div>
+            
+            <div class="questions-section" id="questionsSection">
+                <h2>Generated Questions</h2>
+                <button class="upload-btn" onclick="generateQuestions()" style="margin-bottom: 20px;">
+                    Generate Questions
+                </button>
+                <div id="questionsList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSessionId = null;
+        
+        document.getElementById('pdfInput').addEventListener('change', function(e) {
+            if (e.target.files.length > 0) {
+                document.getElementById('processBtn').style.display = 'inline-block';
+                showStatus(`Selected: ${e.target.files[0].name}`, 'success');
+            }
+        });
+        
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+            
+            if (type === 'success') {
+                setTimeout(() => status.style.display = 'none', 3000);
+            }
+        }
+        
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+        
+        async function processPDF() {
+            const fileInput = document.getElementById('pdfInput');
+            if (!fileInput.files[0]) {
+                showStatus('Please select a PDF file first', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('pdf', fileInput.files[0]);
+            
+            showLoading(true);
+            
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    currentSessionId = result.session_id;
+                    showStatus('PDF processed successfully!', 'success');
+                    document.getElementById('questionsSection').style.display = 'block';
+                } else {
+                    showStatus(result.error || 'Failed to process PDF', 'error');
+                }
+            } catch (error) {
+                showStatus('Error uploading PDF: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        async function generateQuestions() {
+            if (!currentSessionId) {
+                showStatus('Please upload and process a PDF first', 'error');
+                return;
+            }
+            
+            showLoading(true);
+            
+            try {
+                const response = await fetch('/api/generate-questions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        num_questions: 5
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    displayQuestions(result.questions);
+                    showStatus('Questions generated successfully!', 'success');
+                } else {
+                    showStatus(result.error || 'Failed to generate questions', 'error');
+                }
+            } catch (error) {
+                showStatus('Error generating questions: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        function displayQuestions(questions) {
+            const questionsList = document.getElementById('questionsList');
+            questionsList.innerHTML = '';
+            
+            questions.forEach((question, index) => {
+                const questionDiv = document.createElement('div');
+                questionDiv.className = 'question-item';
+                questionDiv.innerHTML = `
+                    <div class="question-text">${question}</div>
+                    <button class="answer-btn" onclick="getAnswer('${question}', ${index})">
+                        Get Answer
+                    </button>
+                    <div class="answer-display" id="answer-${index}"></div>
+                `;
+                questionsList.appendChild(questionDiv);
+            });
+        }
+        
+        async function getAnswer(question, index) {
+            if (!currentSessionId) {
+                showStatus('Please upload and process a PDF first', 'error');
+                return;
+            }
+            
+            const answerDiv = document.getElementById(`answer-${index}`);
+            answerDiv.innerHTML = '<div class="spinner"></div><p>Generating answer...</p>';
+            answerDiv.style.display = 'block';
+            
+            try {
+                const response = await fetch('/api/get-answer', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        question: question
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    const answer = result.answer;
+                    let answerHtml = '';
+                    
+                    if (typeof answer === 'object' && answer.answer) {
+                        answerHtml = `
+                            <h4>Answer:</h4>
+                            <p>${answer.answer}</p>
+                            <h4>Sources:</h4>
+                            <ul>
+                                ${answer.sources.map(source => `<li>Page ${source.page}: ${source.content}</li>`).join('')}
+                            </ul>
+                        `;
+                    } else {
+                        answerHtml = `<p>${answer}</p>`;
+                    }
+                    
+                    answerDiv.innerHTML = answerHtml;
+                } else {
+                    answerDiv.innerHTML = `<p style="color: red;">Error: ${result.error}</p>`;
+                }
+            } catch (error) {
+                answerDiv.innerHTML = `<p style="color: red;">Error getting answer: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>
